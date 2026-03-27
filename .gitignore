@@ -1,0 +1,30 @@
+# Rust / Cargo
+src-tauri/target/
+
+# Node.js
+node_modules/
+package-lock.json
+
+# Tauri build outputs
+src-tauri/gen/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+
+tasks/

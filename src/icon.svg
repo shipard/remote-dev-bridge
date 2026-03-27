@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Bridge deck -->
+  <rect x="4" y="34" width="56" height="5" rx="2.5" fill="#4A90D9"/>
+
+  <!-- Left tower -->
+  <rect x="12" y="16" width="6" height="23" rx="2" fill="#2C6FAC"/>
+  <!-- Right tower -->
+  <rect x="46" y="16" width="6" height="23" rx="2" fill="#2C6FAC"/>
+
+  <!-- Tower caps -->
+  <rect x="10" y="13" width="10" height="5" rx="2" fill="#1A4F80"/>
+  <rect x="44" y="13" width="10" height="5" rx="2" fill="#1A4F80"/>
+
+  <!-- Main cables (parabolic arcs rendered as polylines) -->
+  <polyline points="15,18 24,28 32,32 40,28 49,18"
+            stroke="#2C6FAC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- Suspender cables -->
+  <line x1="24" y1="28" x2="24" y2="34" stroke="#4A90D9" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="32" y1="32" x2="32" y2="34" stroke="#4A90D9" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="40" y1="28" x2="40" y2="34" stroke="#4A90D9" stroke-width="1.5" stroke-linecap="round"/>
+
+  <!-- SSH key symbol (bottom right) -->
+  <circle cx="51" cy="50" r="5" stroke="#F5A623" stroke-width="2" fill="none"/>
+  <line x1="46" y1="50" x2="34" y2="50" stroke="#F5A623" stroke-width="2" stroke-linecap="round"/>
+  <line x1="38" y1="50" x2="38" y2="54" stroke="#F5A623" stroke-width="2" stroke-linecap="round"/>
+  <line x1="35" y1="50" x2="35" y2="53" stroke="#F5A623" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Road surface lines -->
+  <line x1="4" y1="39" x2="60" y2="39" stroke="#3A7BC8" stroke-width="0.5" stroke-dasharray="4 4"/>
+</svg>

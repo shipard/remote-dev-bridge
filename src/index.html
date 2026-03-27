@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Remote Dev Bridge</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<div class="app-layout">
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="sidebar-title">Remote Dev Bridge</div>
+    <div class="nav-item active" data-section="servers">
+      <span class="nav-icon">🖥️</span> Servers
+    </div>
+    <div class="nav-item" data-section="projects">
+      <span class="nav-icon">📁</span> Projects
+    </div>
+    <div class="nav-item" data-section="settings">
+      <span class="nav-icon">⚙️</span> Settings
+    </div>
+  </nav>
+
+  <!-- Main content -->
+  <div class="main-content">
+
+    <!-- ── Servers ── -->
+    <div id="section-servers" class="section">
+      <div class="content-header">
+        <h2>Servers</h2>
+        <button class="btn-primary" onclick="openServerModal()">+ Add Server</button>
+      </div>
+      <div class="content-scroll">
+        <!-- First-run welcome banner -->
+        <div id="welcome-banner" class="welcome-banner hidden">
+          <div class="welcome-icon">🌉</div>
+          <div class="welcome-body">
+            <h3>Welcome to Remote Dev Bridge</h3>
+            <p>This app lets Claude access your remote development servers over SSH. To get started:</p>
+            <ol>
+              <li>Add a server below (host, username, SSH key path).</li>
+              <li>Create a project pointing to a directory on that server.</li>
+              <li>Go to <strong>Settings → Copy Claude Desktop Config</strong> and paste it into your <code>claude_desktop_config.json</code>.</li>
+              <li>Restart Claude Desktop and ask Claude to list your projects.</li>
+            </ol>
+          </div>
+          <button class="btn-icon welcome-close" onclick="dismissWelcome()" title="Dismiss">✕</button>
+        </div>
+        <div id="server-list" class="card-list"></div>
+      </div>
+    </div>
+
+    <!-- ── Projects ── -->
+    <div id="section-projects" class="section hidden">
+      <div class="content-header">
+        <h2>Projects</h2>
+        <button class="btn-primary" onclick="openProjectModal()">+ Add Project</button>
+      </div>
+      <div class="content-scroll">
+        <div id="project-list" class="card-list"></div>
+      </div>
+    </div>
+
+    <!-- ── Settings ── -->
+    <div id="section-settings" class="section hidden">
+      <div class="content-header">
+        <h2>Settings</h2>
+      </div>
+      <div class="content-scroll">
+
+        <div class="settings-section">
+          <h3>File Access</h3>
+          <div class="form-group">
+            <label for="setting-max-file-size">Max file size (KB)</label>
+            <input type="number" id="setting-max-file-size" min="64" max="102400" step="128" />
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>SSH</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="setting-ssh-timeout">Connection timeout (sec)</label>
+              <input type="number" id="setting-ssh-timeout" min="1" max="120" />
+            </div>
+            <div class="form-group">
+              <label for="setting-ssh-keepalive">Keepalive interval (sec)</label>
+              <input type="number" id="setting-ssh-keepalive" min="5" max="300" />
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Behaviour</h3>
+          <div class="checkbox-row">
+            <input type="checkbox" id="setting-confirm-destructive" />
+            <label for="setting-confirm-destructive">Confirm before destructive operations</label>
+          </div>
+        </div>
+
+        <button class="btn-primary" onclick="saveSettings()">Save Settings</button>
+
+        <div class="settings-section" style="margin-top:24px">
+          <h3>Claude Desktop Integration</h3>
+          <p style="color:var(--text2);margin-bottom:12px;font-size:12px">
+            Paste this config into your <code>claude_desktop_config.json</code> under the <code>mcpServers</code> key, then restart Claude Desktop.
+          </p>
+          <button class="btn-secondary" onclick="copyClaudeConfig()">📋 Copy Claude Desktop Config</button>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /.main-content -->
+</div><!-- /.app-layout -->
+
+<!-- ── Server modal ── -->
+<div id="server-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="server-modal-title">Add Server</h3>
+      <button class="btn-icon" onclick="closeServerModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="server-form" onsubmit="return false">
+        <div class="form-group">
+          <label for="server-label">Display Name</label>
+          <input type="text" id="server-label" placeholder="My Dev Server" />
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:3">
+            <label for="server-host">Hostname / IP</label>
+            <input type="text" id="server-host" placeholder="192.168.1.10" />
+          </div>
+          <div class="form-group" style="flex:1">
+            <label for="server-port">Port</label>
+            <input type="number" id="server-port" value="22" min="1" max="65535" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="server-username">Username</label>
+          <input type="text" id="server-username" placeholder="ubuntu" />
+        </div>
+        <div class="form-group">
+          <label for="server-auth-type">Authentication</label>
+          <select id="server-auth-type" onchange="updateAuthFields()">
+            <option value="key">SSH Key</option>
+            <option value="agent">SSH Agent</option>
+          </select>
+        </div>
+        <div id="auth-key-fields" class="auth-key-fields">
+          <div class="form-group">
+            <label for="server-key-path">Private key path</label>
+            <input type="text" id="server-key-path" placeholder="~/.ssh/id_rsa" />
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeServerModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveServer()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Project modal ── -->
+<div id="project-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="project-modal-title">Add Project</h3>
+      <button class="btn-icon" onclick="closeProjectModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="project-form" onsubmit="return false">
+        <div class="form-group">
+          <label for="project-label">Project Name</label>
+          <input type="text" id="project-label" placeholder="my-api" />
+        </div>
+        <div class="form-group">
+          <label for="project-server">Server</label>
+          <select id="project-server"></select>
+        </div>
+        <div class="form-group">
+          <label for="project-root">Root Path</label>
+          <input type="text" id="project-root" placeholder="/home/ubuntu/my-project" />
+        </div>
+        <div class="form-group">
+          <label for="project-desc">Description (optional)</label>
+          <textarea id="project-desc" placeholder="Short description shown to Claude"></textarea>
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="project-allow-commands" onchange="updateAllowedCommandsVisibility()" />
+          <label for="project-allow-commands">Allow shell commands</label>
+        </div>
+        <div id="allowed-commands-group" class="form-group hidden">
+          <label for="project-allowed-commands">Allowed command prefixes (one per line, leave empty to allow all)</label>
+          <textarea id="project-allowed-commands" placeholder="git&#10;npm&#10;cargo"></textarea>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeProjectModal()">Cancel</button>
+      <button class="btn-primary" onclick="saveProject()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast notification -->
+<div id="toast"></div>
+
+<script src="main.js"></script>
+</body>
+</html>
