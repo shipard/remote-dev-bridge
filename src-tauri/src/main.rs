@@ -151,8 +151,28 @@ async fn run_mcp_stdio() {
 
 // ── Desktop app mode ───────────────────────────────────────────────────────────
 
+/// Make this process a macOS "UI-element" app: no Dock icon, no app menu.
+/// `LSUIElement` in Info.plist does this for .app bundles, but when running
+/// the bare binary we must call the OS API ourselves — before any Cocoa /
+/// Tauri initialisation so the Dock icon never appears in the first place.
+#[cfg(target_os = "macos")]
+fn macos_hide_from_dock() {
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn TransformProcessType(psn: *const [u32; 2], r#type: u32) -> i32;
+    }
+    const K_CURRENT_PROCESS: [u32; 2] = [0, 2]; // kCurrentProcess
+    const K_TRANSFORM_TO_UI_ELEMENT: u32 = 4; // kProcessTransformToUIElementApplication
+    unsafe {
+        TransformProcessType(&K_CURRENT_PROCESS, K_TRANSFORM_TO_UI_ELEMENT);
+    }
+}
+
 fn run_desktop_app() {
     info!("Starting in desktop app mode");
+
+    #[cfg(target_os = "macos")]
+    macos_hide_from_dock();
 
     // Detect first run *before* load_config creates the file.
     let first_run = !config::config_exists();
@@ -188,8 +208,6 @@ fn run_desktop_app() {
         ])
         .setup(move |app| {
             use tauri::Manager;
-            #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             tray::setup(app.handle())?;
             if let Some(window) = app.get_webview_window("main") {
                 tray::attach_close_handler(&window);
