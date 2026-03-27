@@ -30,7 +30,7 @@
     <div id="section-servers" class="section">
       <div class="content-header">
         <h2>Servers</h2>
-        <button class="btn-primary" onclick="openServerModal()">+ Add Server</button>
+        <button class="btn-primary" id="btn-add-server">+ Add Server</button>
       </div>
       <div class="content-scroll">
         <!-- First-run welcome banner -->
@@ -46,7 +46,7 @@
               <li>Restart Claude Desktop and ask Claude to list your projects.</li>
             </ol>
           </div>
-          <button class="btn-icon welcome-close" onclick="dismissWelcome()" title="Dismiss">✕</button>
+          <button class="btn-icon welcome-close" id="btn-dismiss-welcome" title="Dismiss">✕</button>
         </div>
         <div id="server-list" class="card-list"></div>
       </div>
@@ -56,7 +56,7 @@
     <div id="section-projects" class="section hidden">
       <div class="content-header">
         <h2>Projects</h2>
-        <button class="btn-primary" onclick="openProjectModal()">+ Add Project</button>
+        <button class="btn-primary" id="btn-add-project">+ Add Project</button>
       </div>
       <div class="content-scroll">
         <div id="project-list" class="card-list"></div>
@@ -100,14 +100,14 @@
           </div>
         </div>
 
-        <button class="btn-primary" onclick="saveSettings()">Save Settings</button>
+        <button class="btn-primary" id="btn-save-settings">Save Settings</button>
 
         <div class="settings-section" style="margin-top:24px">
           <h3>Claude Desktop Integration</h3>
           <p style="color:var(--text2);margin-bottom:12px;font-size:12px">
             Paste this config into your <code>claude_desktop_config.json</code> under the <code>mcpServers</code> key, then restart Claude Desktop.
           </p>
-          <button class="btn-secondary" onclick="copyClaudeConfig()">📋 Copy Claude Desktop Config</button>
+          <button class="btn-secondary" id="btn-copy-claude-config">📋 Copy Claude Desktop Config</button>
         </div>
 
       </div>
@@ -121,10 +121,10 @@
   <div class="modal">
     <div class="modal-header">
       <h3 id="server-modal-title">Add Server</h3>
-      <button class="btn-icon" onclick="closeServerModal()">✕</button>
+      <button class="btn-icon" id="btn-close-server-modal-x">✕</button>
     </div>
     <div class="modal-body">
-      <form id="server-form" onsubmit="return false">
+      <form id="server-form">
         <div class="form-group">
           <label for="server-label">Display Name</label>
           <input type="text" id="server-label" placeholder="My Dev Server" />
@@ -145,7 +145,7 @@
         </div>
         <div class="form-group">
           <label for="server-auth-type">Authentication</label>
-          <select id="server-auth-type" onchange="updateAuthFields()">
+          <select id="server-auth-type">
             <option value="key">SSH Key</option>
             <option value="agent">SSH Agent</option>
           </select>
@@ -159,8 +159,8 @@
       </form>
     </div>
     <div class="modal-footer">
-      <button class="btn-secondary" onclick="closeServerModal()">Cancel</button>
-      <button class="btn-primary" onclick="saveServer()">Save</button>
+      <button class="btn-secondary" id="btn-close-server-modal-cancel">Cancel</button>
+      <button class="btn-primary" id="btn-save-server">Save</button>
     </div>
   </div>
 </div>
@@ -170,10 +170,10 @@
   <div class="modal">
     <div class="modal-header">
       <h3 id="project-modal-title">Add Project</h3>
-      <button class="btn-icon" onclick="closeProjectModal()">✕</button>
+      <button class="btn-icon" id="btn-close-project-modal-x">✕</button>
     </div>
     <div class="modal-body">
-      <form id="project-form" onsubmit="return false">
+      <form id="project-form">
         <div class="form-group">
           <label for="project-label">Project Name</label>
           <input type="text" id="project-label" placeholder="my-api" />
@@ -191,7 +191,7 @@
           <textarea id="project-desc" placeholder="Short description shown to Claude"></textarea>
         </div>
         <div class="checkbox-row">
-          <input type="checkbox" id="project-allow-commands" onchange="updateAllowedCommandsVisibility()" />
+          <input type="checkbox" id="project-allow-commands" />
           <label for="project-allow-commands">Allow shell commands</label>
         </div>
         <div id="allowed-commands-group" class="form-group hidden">
@@ -201,8 +201,8 @@
       </form>
     </div>
     <div class="modal-footer">
-      <button class="btn-secondary" onclick="closeProjectModal()">Cancel</button>
-      <button class="btn-primary" onclick="saveProject()">Save</button>
+      <button class="btn-secondary" id="btn-close-project-modal-cancel">Cancel</button>
+      <button class="btn-primary" id="btn-save-project">Save</button>
     </div>
   </div>
 </div>

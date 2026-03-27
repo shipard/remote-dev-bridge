@@ -13,6 +13,7 @@ let editingProjectId = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
   setupNav();
+  setupEventListeners();
   await loadConfig();
   showSection("servers");
   pollConnectionStatus();
@@ -24,6 +25,52 @@ document.addEventListener("DOMContentLoaded", async () => {
 function setupNav() {
   document.querySelectorAll(".nav-item").forEach(item => {
     item.addEventListener("click", () => showSection(item.dataset.section));
+  });
+}
+
+function setupEventListeners() {
+  // Static buttons
+  document.getElementById("btn-add-server").addEventListener("click", () => openServerModal());
+  document.getElementById("btn-add-project").addEventListener("click", () => openProjectModal());
+  document.getElementById("btn-dismiss-welcome").addEventListener("click", dismissWelcome);
+  document.getElementById("btn-save-settings").addEventListener("click", saveSettings);
+  document.getElementById("btn-copy-claude-config").addEventListener("click", copyClaudeConfig);
+
+  // Server modal
+  document.getElementById("btn-close-server-modal-x").addEventListener("click", closeServerModal);
+  document.getElementById("btn-close-server-modal-cancel").addEventListener("click", closeServerModal);
+  document.getElementById("btn-save-server").addEventListener("click", saveServer);
+  document.getElementById("server-auth-type").addEventListener("change", updateAuthFields);
+  document.getElementById("server-form").addEventListener("submit", (e) => e.preventDefault());
+
+  // Project modal
+  document.getElementById("btn-close-project-modal-x").addEventListener("click", closeProjectModal);
+  document.getElementById("btn-close-project-modal-cancel").addEventListener("click", closeProjectModal);
+  document.getElementById("btn-save-project").addEventListener("click", saveProject);
+  document.getElementById("project-allow-commands").addEventListener("change", updateAllowedCommandsVisibility);
+  document.getElementById("project-form").addEventListener("submit", (e) => e.preventDefault());
+
+  // Event delegation for dynamically-rendered server cards
+  document.getElementById("server-list").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-action]");
+    if (!btn) return;
+    const id = btn.dataset.id;
+    switch (btn.dataset.action) {
+      case "test-server": testServer(id); break;
+      case "edit-server": openServerModal(id); break;
+      case "delete-server": deleteServer(id); break;
+    }
+  });
+
+  // Event delegation for dynamically-rendered project cards
+  document.getElementById("project-list").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-action]");
+    if (!btn) return;
+    const id = btn.dataset.id;
+    switch (btn.dataset.action) {
+      case "edit-project": openProjectModal(id); break;
+      case "delete-project": deleteProject(id); break;
+    }
   });
 }
 
@@ -82,9 +129,9 @@ function renderServers() {
         <div class="card-subtitle">${esc(s.username)}@${esc(s.host)}:${s.port}</div>
       </div>
       <div class="card-actions">
-        <button class="btn-secondary" onclick="testServer('${id}')">Test</button>
-        <button class="btn-icon" onclick="openServerModal('${id}')" title="Edit">✏️</button>
-        <button class="btn-icon" onclick="deleteServer('${id}')" title="Delete">🗑️</button>
+        <button class="btn-secondary" data-action="test-server" data-id="${id}">Test</button>
+        <button class="btn-icon" data-action="edit-server" data-id="${id}" title="Edit">✏️</button>
+        <button class="btn-icon" data-action="delete-server" data-id="${id}" title="Delete">🗑️</button>
       </div>
     </div>`;
   }).join("");
@@ -221,8 +268,8 @@ function renderProjects() {
         <div class="card-subtitle" style="margin-top:2px">${esc(cmds)}</div>
       </div>
       <div class="card-actions">
-        <button class="btn-icon" onclick="openProjectModal('${id}')" title="Edit">✏️</button>
-        <button class="btn-icon" onclick="deleteProject('${id}')" title="Delete">🗑️</button>
+        <button class="btn-icon" data-action="edit-project" data-id="${id}" title="Edit">✏️</button>
+        <button class="btn-icon" data-action="delete-project" data-id="${id}" title="Delete">🗑️</button>
       </div>
     </div>`;
   }).join("");

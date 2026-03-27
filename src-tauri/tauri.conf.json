@@ -23,7 +23,7 @@
       "iconPath": "icons/icon.png"
     },
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self' ipc: http://ipc.localhost; script-src 'self'; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {

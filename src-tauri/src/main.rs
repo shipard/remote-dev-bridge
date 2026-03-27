@@ -188,6 +188,8 @@ fn run_desktop_app() {
         ])
         .setup(move |app| {
             use tauri::Manager;
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             tray::setup(app.handle())?;
             if let Some(window) = app.get_webview_window("main") {
                 tray::attach_close_handler(&window);
