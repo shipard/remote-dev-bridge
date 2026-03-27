@@ -85,8 +85,15 @@ impl SshSession {
             reason: e.to_string(),
         })?;
 
-        // For RSA keys, prefer SHA-256 hash; for Ed25519/ECDSA, hash_alg is ignored.
-        let key_with_alg = PrivateKeyWithHashAlg::new(Arc::new(key), None);
+        // RSA keys need an explicit hash algorithm for rsa-sha2-256 negotiation.
+        // Ed25519 and ECDSA keys ignore this parameter.
+        let hash_alg = match key.algorithm() {
+            russh::keys::ssh_key::Algorithm::Rsa { .. } => {
+                Some(russh::keys::ssh_key::HashAlg::Sha256)
+            }
+            _ => None,
+        };
+        let key_with_alg = PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg);
 
         let auth_result = handle
             .authenticate_publickey(&config.username, key_with_alg)
