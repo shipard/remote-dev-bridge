@@ -1,4 +1,5 @@
 use serde::Serialize;
+use tokio::io::AsyncWriteExt;
 use tracing::debug;
 
 use crate::config::{ServerConfig, Settings};
@@ -98,9 +99,21 @@ pub async fn sftp_write_file(
 
     let sftp = session.open_sftp().await?;
     let data = content.as_bytes();
-    sftp.write(path, data)
+
+    // Use create() (CREATE | TRUNCATE | WRITE) instead of write() (WRITE only),
+    // because write() fails with SSH_FX_NO_SUCH_FILE on new files.
+    let mut file = sftp
+        .create(path)
         .await
-        .map_err(|e| SshError::Sftp(e.to_string()))?;
+        .map_err(|e| SshError::Sftp(format!("create file: {e}")))?;
+
+    file.write_all(data)
+        .await
+        .map_err(|e| SshError::Sftp(format!("write data: {e}")))?;
+
+    file.shutdown()
+        .await
+        .map_err(|e| SshError::Sftp(format!("close file: {e}")))?;
 
     Ok(data.len() as u64)
 }
