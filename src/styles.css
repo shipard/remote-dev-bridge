@@ -110,6 +110,13 @@ body {
   overflow: hidden;
 }
 
+.section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
 .content-header {
   padding: 16px 20px 12px;
   border-bottom: 1px solid var(--border);
