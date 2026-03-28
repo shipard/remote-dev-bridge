@@ -17,6 +17,8 @@ Remote Dev Bridge runs two modes from the same binary:
 
 Claude Desktop launches the `--mcp-stdio` process automatically when you start a conversation. The binary reads your configuration, opens SSH connections on demand, and exposes a set of filesystem tools to Claude.
 
+Configuration changes made in the tray UI take effect immediately — the MCP server hot-reloads config from disk on every tool call, so there is no need to restart Claude Desktop after editing servers or projects.
+
 ### Available tools
 
 | Tool | Description |
@@ -40,7 +42,7 @@ Claude Desktop launches the `--mcp-stdio` process automatically when you start a
 
 - **macOS 10.15+**, **Windows 10+**, or a modern Linux desktop
 - SSH access to your remote server (key-based authentication)
-- SSH key loaded (e.g. `~/.ssh/id_rsa` or `~/.ssh/id_ed25519`)
+- SSH key without passphrase (e.g. `~/.ssh/id_rsa` or `~/.ssh/id_ed25519`). Passphrase-protected keys are not yet supported; ssh-agent support is planned.
 - [Claude Desktop](https://claude.ai/download) installed
 
 ---
@@ -58,13 +60,38 @@ Claude Desktop launches the `--mcp-stdio` process automatically when you start a
 ### Build from source
 
 ```bash
-# Prerequisites: Rust (stable), Node.js (any recent version)
-git clone https://github.com/yourname/remote-dev-bridge
+# Prerequisites
+# macOS: Xcode Command Line Tools
+xcode-select --install
+
+# Rust (stable)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Node.js (any recent LTS version)
+brew install node          # macOS
+# or: sudo apt install nodejs npm   # Debian/Ubuntu
+
+# Tauri CLI
+cargo install tauri-cli
+
+# Clone and build
+git clone https://github.com/shipard/remote-dev-bridge
 cd remote-dev-bridge
 cargo tauri build
 ```
 
 The built installer is placed in `src-tauri/target/release/bundle/`.
+
+For development (faster iteration without bundling):
+
+```bash
+cargo build
+# Run the tray app:
+src-tauri/target/debug/remote-dev-bridge
+# Or test MCP mode directly:
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0.1"}}}' \
+  | src-tauri/target/debug/remote-dev-bridge --mcp-stdio 2>/dev/null
+```
 
 ---
 
@@ -81,6 +108,8 @@ The built installer is placed in `src-tauri/target/release/bundle/`.
    - Project name, choose a server, and set the root path (e.g. `/home/ubuntu/my-api`)
    - Optional: enable shell commands and restrict to safe prefixes (e.g. `git`, `npm`)
 4. Click **Save**.
+
+Changes are picked up by the MCP server automatically on the next tool call.
 
 ### Manual (JSON)
 
@@ -131,7 +160,6 @@ Config is stored at:
 ## Claude Desktop integration
 
 1. Open the tray menu → **Copy Claude Desktop Config**
-   *or* go to **Settings → Copy Claude Desktop Config** in the app.
 
 2. Open your Claude Desktop config file:
 
@@ -183,8 +211,9 @@ Set the `RUST_LOG` environment variable to change verbosity (e.g. `RUST_LOG=debu
 - Increase **SSH connection timeout** in Settings if on a slow network.
 
 ### "Authentication failed"
-- Confirm the key path is correct and the key is not passphrase-protected (or is loaded in ssh-agent).
-- Run `ssh -i <key_path> <user>@<host>` manually to verify.
+- Confirm the key path is correct and the key is **not** passphrase-protected (passphrase support is not yet implemented).
+- Verify that the key works manually: `ssh -i <key_path> <user>@<host>`
+- RSA, Ed25519, and ECDSA key types are all supported.
 
 ### "Server 'X' not found" / "Config unavailable"
 - If your config file was corrupt, it has been backed up as `config.json.bak` and a fresh default was created.
@@ -193,7 +222,7 @@ Set the `RUST_LOG` environment variable to change verbosity (e.g. `RUST_LOG=debu
 ### Claude doesn't see the MCP server
 - Make sure the `command` path in `claude_desktop_config.json` points to the actual installed binary.
 - Use **Copy Claude Desktop Config** from the tray menu to get the correct path automatically.
-- Restart Claude Desktop after editing its config.
+- Restart Claude Desktop after editing its config (this is only needed once; subsequent config changes in Remote Dev Bridge are picked up automatically).
 
 ### No tray icon on Linux
 - Ensure your desktop environment supports system tray icons (e.g. install `libappindicator` or a GNOME extension like *AppIndicator Support*).
@@ -211,4 +240,4 @@ Set the `RUST_LOG` environment variable to change verbosity (e.g. `RUST_LOG=debu
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
