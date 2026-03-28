@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Remote Dev Bridge ${{ github.ref_name }}'
+          releaseBody: |
+            ## Installation
+
+            1. Download the `.dmg` file below
+            2. Open it and drag **Remote Dev Bridge** to Applications
+            3. Launch the app — a bridge icon appears in your menu bar
+            4. Configure your SSH servers and projects
+            5. Copy the Claude Desktop config from the tray menu
+            6. Paste it into `~/Library/Application Support/Claude/claude_desktop_config.json`
+            7. Restart Claude Desktop
+
+            > **Note:** macOS may show a security warning on first launch.
+            > Go to System Settings → Privacy & Security and click "Open Anyway".
+          releaseDraft: true
+          prerelease: false
+          includeDebug: false
