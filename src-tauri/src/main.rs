@@ -129,6 +129,17 @@ fn cleanup_old_logs(log_dir: &std::path::Path, keep: usize) {
 async fn run_mcp_stdio() {
     info!("Starting in MCP stdio mode");
 
+    let config_path = match config::config_path() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("fatal: cannot resolve config path: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    // Load once at startup to initialise SSH settings for the session manager.
+    // The MCP server will re-read config from disk on every tools/call so that
+    // changes made via the tray UI are picked up without restarting.
     let cfg = match config::load_config() {
         Ok(c) => {
             info!(
@@ -145,7 +156,7 @@ async fn run_mcp_stdio() {
     };
 
     let sessions = ssh::SshSessionManager::new_shared(cfg.settings.clone());
-    let server = mcp::McpServer::new(cfg, sessions);
+    let server = mcp::McpServer::new(config_path, sessions);
     server.run().await;
 }
 

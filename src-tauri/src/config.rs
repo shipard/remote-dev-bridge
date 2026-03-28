@@ -92,24 +92,24 @@ pub fn config_exists() -> bool {
     config_path().map(|p| p.exists()).unwrap_or(false)
 }
 
-/// Load config from disk, creating a default config if the file doesn't exist.
-/// If the file exists but is corrupt, backs it up and returns a fresh default.
-pub fn load_config() -> Result<AppConfig, ConfigError> {
-    let path = config_path()?;
-
+/// Load config from a specific path.
+///
+/// Returns `AppConfig::default()` if the file doesn't exist.  If the file
+/// exists but is corrupt, backs it up and returns defaults.
+pub fn load_config_from_path(path: &std::path::Path) -> Result<AppConfig, ConfigError> {
     if !path.exists() {
         info!("Config not found at {:?}, using default", path);
         return Ok(AppConfig::default());
     }
 
     debug!("Loading config from {:?}", path);
-    let contents = std::fs::read_to_string(&path)?;
+    let contents = std::fs::read_to_string(path)?;
     match serde_json::from_str::<AppConfig>(&contents) {
         Ok(config) => Ok(config),
         Err(e) => {
             // Back up the corrupt file so the user can recover their data.
             let backup = path.with_extension("json.bak");
-            let _ = std::fs::copy(&path, &backup);
+            let _ = std::fs::copy(path, &backup);
             tracing::warn!(
                 "Config at {:?} is corrupt ({e}); backed up to {:?} and using defaults",
                 path,
@@ -118,6 +118,12 @@ pub fn load_config() -> Result<AppConfig, ConfigError> {
             Ok(AppConfig::default())
         }
     }
+}
+
+/// Load config from disk, creating a default config if the file doesn't exist.
+/// If the file exists but is corrupt, backs it up and returns a fresh default.
+pub fn load_config() -> Result<AppConfig, ConfigError> {
+    load_config_from_path(&config_path()?)
 }
 
 /// Write config to disk atomically (write to temp file then rename).

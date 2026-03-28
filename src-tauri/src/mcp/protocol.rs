@@ -15,13 +15,20 @@ use super::types::{
 // ── McpServer ─────────────────────────────────────────────────────────────────
 
 pub struct McpServer {
-    config: AppConfig,
+    config_path: std::path::PathBuf,
     sessions: SharedSessionManager,
 }
 
 impl McpServer {
-    pub fn new(config: AppConfig, sessions: SharedSessionManager) -> Self {
-        Self { config, sessions }
+    pub fn new(config_path: std::path::PathBuf, sessions: SharedSessionManager) -> Self {
+        Self { config_path, sessions }
+    }
+
+    /// Reload config from disk. Called on every tools/call so that changes
+    /// made via the tray UI are picked up without restarting Claude Desktop.
+    fn load_config(&self) -> Result<AppConfig, String> {
+        crate::config::load_config_from_path(&self.config_path)
+            .map_err(|e| format!("Failed to reload config: {e}"))
     }
 
     /// Run the stdio JSON-RPC loop.  Reads lines from stdin, dispatches, writes
@@ -142,8 +149,13 @@ impl McpServer {
             .cloned()
             .unwrap_or(Value::Object(Default::default()));
 
+        let config = match self.load_config() {
+            Ok(c) => c,
+            Err(e) => return encode(JsonRpcError::internal(id, e)),
+        };
+
         let tool_result: ToolResult =
-            dispatch(tool_name, &args, &self.config, &self.sessions).await;
+            dispatch(tool_name, &args, &config, &self.sessions).await;
 
         encode(JsonRpcResponse::ok(id, serde_json::to_value(tool_result).unwrap_or(Value::Null)))
     }
