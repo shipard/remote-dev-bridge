@@ -93,6 +93,15 @@ body {
 .nav-item.active { background: var(--accent); color: #fff; }
 .nav-item .nav-icon { font-size: 15px; }
 
+.nav-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.nav-item.active .nav-count { opacity: 0.9; }
+
 /* ── Main content ── */
 .main-content {
   flex: 1;
@@ -158,6 +167,24 @@ body {
   text-overflow: ellipsis;
 }
 
+.card-desc {
+  font-size: 12px;
+  color: var(--text2);
+  margin-top: 3px;
+  opacity: 0.85;
+}
+
+.card-info {
+  font-size: 11px;
+  margin-top: 4px;
+  line-height: 1.4;
+  transition: opacity 0.3s;
+}
+
+.card-info.success { color: var(--success); }
+.card-info.error { color: var(--danger); }
+.card-info.fade-out { opacity: 0; }
+
 .card-actions {
   display: flex;
   gap: 6px;
@@ -172,6 +199,23 @@ body {
 }
 
 .empty-state p { margin-top: 8px; font-size: 13px; }
+.empty-state .btn-primary { margin-top: 16px; }
+
+/* ── Tags / pills ── */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-top: 6px;
+}
+
+.tag-gray { background: var(--surface2); color: var(--text2); }
+.tag-green { background: color-mix(in srgb, var(--success) 15%, var(--surface)); color: var(--success); }
+.tag-orange { background: color-mix(in srgb, var(--warn) 15%, var(--surface)); color: var(--warn); }
 
 /* ── Status dot ── */
 .status-dot {
@@ -213,6 +257,11 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .btn-primary:not(:disabled):hover { background: var(--accent-hover); }
 
+.btn-primary.saved {
+  background: var(--success);
+  pointer-events: none;
+}
+
 .btn-secondary {
   background: var(--surface2);
   color: var(--text);
@@ -222,12 +271,12 @@ button:disabled { opacity: 0.5; cursor: default; }
 .btn-secondary:not(:disabled):hover { background: var(--border); }
 
 .btn-danger {
-  background: transparent;
-  color: var(--danger);
-  border: 1px solid var(--danger);
+  background: var(--danger);
+  color: #fff;
+  font-weight: 500;
 }
 
-.btn-danger:not(:disabled):hover { background: var(--danger); color: #fff; }
+.btn-danger:not(:disabled):hover { opacity: 0.85; }
 
 .btn-icon {
   background: transparent;

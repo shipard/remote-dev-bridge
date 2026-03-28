@@ -14,6 +14,7 @@ let editingProjectId = null;
 document.addEventListener("DOMContentLoaded", async () => {
   setupNav();
   setupEventListeners();
+  setupKeyboard();
   await loadConfig();
   showSection("servers");
   pollConnectionStatus();
@@ -72,6 +73,40 @@ function setupEventListeners() {
       case "delete-project": deleteProject(id); break;
     }
   });
+
+  // Close modals on backdrop click (not confirm modal)
+  document.getElementById("server-modal").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) closeServerModal();
+  });
+  document.getElementById("project-modal").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) closeProjectModal();
+  });
+}
+
+function setupKeyboard() {
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      // Close topmost modal
+      if (!document.getElementById("confirm-modal").classList.contains("hidden")) {
+        resolveConfirm(false);
+      } else if (!document.getElementById("server-modal").classList.contains("hidden")) {
+        closeServerModal();
+      } else if (!document.getElementById("project-modal").classList.contains("hidden")) {
+        closeProjectModal();
+      }
+    }
+
+    // Enter in forms triggers Save
+    if (e.key === "Enter" && e.target.tagName !== "TEXTAREA") {
+      if (!document.getElementById("server-modal").classList.contains("hidden")) {
+        e.preventDefault();
+        saveServer();
+      } else if (!document.getElementById("project-modal").classList.contains("hidden")) {
+        e.preventDefault();
+        saveProject();
+      }
+    }
+  });
 }
 
 function showSection(name) {
@@ -91,6 +126,7 @@ async function loadConfig() {
     config = await invoke("get_config");
     renderServers();
     renderProjects();
+    updateNavCounts();
   } catch (e) {
     showToast("Failed to load config: " + e, true);
   }
@@ -99,11 +135,19 @@ async function loadConfig() {
 async function persistConfig() {
   try {
     await invoke("save_config_cmd", { config });
+    updateNavCounts();
     showToast("Configuration saved");
   } catch (e) {
     showToast("Save failed: " + e, true);
     throw e;
   }
+}
+
+function updateNavCounts() {
+  const sc = Object.keys(config.servers).length;
+  const pc = Object.keys(config.projects).length;
+  document.getElementById("nav-count-servers").textContent = sc > 0 ? `(${sc})` : "";
+  document.getElementById("nav-count-projects").textContent = pc > 0 ? `(${pc})` : "";
 }
 
 // ── Servers section ────────────────────────────────────────────────────────
@@ -115,18 +159,25 @@ function renderServers() {
   if (ids.length === 0) {
     list.innerHTML = `<div class="empty-state">
       <div style="font-size:32px">🖥️</div>
-      <p>No servers configured yet.<br>Add one to get started.</p>
+      <p>No servers configured yet.</p>
+      <button class="btn-primary" data-action="add-first-server">Add Your First Server</button>
     </div>`;
+    list.querySelector("[data-action='add-first-server']")
+      .addEventListener("click", () => openServerModal());
     return;
   }
 
   list.innerHTML = ids.map(id => {
     const s = config.servers[id];
+    const keyInfo = s.auth.auth_type === "key" && s.auth.key_path
+      ? `<div class="card-subtitle">Key: ${esc(s.auth.key_path)}</div>` : "";
     return `<div class="card" id="server-card-${id}">
       <div class="status-dot checking" id="dot-${id}"></div>
       <div class="card-body">
         <div class="card-title">${esc(s.label)}</div>
         <div class="card-subtitle">${esc(s.username)}@${esc(s.host)}:${s.port}</div>
+        ${keyInfo}
+        <div class="card-info" id="info-${id}"></div>
       </div>
       <div class="card-actions">
         <button class="btn-secondary" data-action="test-server" data-id="${id}">Test</button>
@@ -139,14 +190,28 @@ function renderServers() {
 
 async function testServer(id) {
   const dot = document.getElementById(`dot-${id}`);
+  const info = document.getElementById(`info-${id}`);
   dot.className = "status-dot checking";
+  info.textContent = "Connecting...";
+  info.className = "card-info";
   try {
-    const info = await invoke("test_ssh_connection", { serverId: id });
+    const result = await invoke("test_ssh_connection", { serverId: id });
     dot.className = "status-dot connected";
-    showToast("Connected: " + info);
+    info.textContent = result;
+    info.className = "card-info success";
+    // Fade out after 10 seconds
+    setTimeout(() => {
+      info.classList.add("fade-out");
+      setTimeout(() => { info.textContent = ""; info.className = "card-info"; }, 300);
+    }, 10000);
   } catch (e) {
     dot.className = "status-dot error";
-    showToast("Connection failed: " + e, true);
+    info.textContent = String(e);
+    info.className = "card-info error";
+    setTimeout(() => {
+      info.classList.add("fade-out");
+      setTimeout(() => { info.textContent = ""; info.className = "card-info"; }, 300);
+    }, 10000);
   }
 }
 
@@ -165,7 +230,11 @@ async function pollConnectionStatus() {
 
 async function deleteServer(id) {
   const s = config.servers[id];
-  if (!confirm(`Delete server "${s.label}"?\n\nProjects using this server will also be removed.`)) return;
+  const confirmed = await showConfirm(
+    "Delete Server",
+    `Delete server "${s.label}"? Projects using this server will also be removed.`
+  );
+  if (!confirmed) return;
 
   // Remove dependent projects
   Object.keys(config.projects).forEach(pid => {
@@ -251,8 +320,11 @@ function renderProjects() {
   if (ids.length === 0) {
     list.innerHTML = `<div class="empty-state">
       <div style="font-size:32px">📁</div>
-      <p>No projects configured yet.<br>Add a server first, then create a project.</p>
+      <p>No projects configured yet.</p>
+      <button class="btn-primary" data-action="add-first-project">Add Your First Project</button>
     </div>`;
+    list.querySelector("[data-action='add-first-project']")
+      .addEventListener("click", () => openProjectModal());
     return;
   }
 
@@ -260,12 +332,15 @@ function renderProjects() {
     const p = config.projects[id];
     const server = config.servers[p.server];
     const serverLabel = server ? server.label : `(unknown: ${p.server})`;
-    const cmds = p.allow_commands ? (p.allowed_commands?.length ? `Commands: ${p.allowed_commands.join(", ")}` : "All commands allowed") : "Commands disabled";
+    const descHtml = p.description
+      ? `<div class="card-desc">${esc(p.description)}</div>` : "";
+    const cmdTag = commandTag(p);
     return `<div class="card">
       <div class="card-body">
         <div class="card-title">${esc(p.label)}</div>
         <div class="card-subtitle">${esc(serverLabel)} · ${esc(p.root_path)}</div>
-        <div class="card-subtitle" style="margin-top:2px">${esc(cmds)}</div>
+        ${descHtml}
+        ${cmdTag}
       </div>
       <div class="card-actions">
         <button class="btn-icon" data-action="edit-project" data-id="${id}" title="Edit">✏️</button>
@@ -275,9 +350,20 @@ function renderProjects() {
   }).join("");
 }
 
+function commandTag(project) {
+  if (!project.allow_commands) {
+    return `<span class="tag tag-gray">Commands disabled</span>`;
+  }
+  if (project.allowed_commands?.length) {
+    return `<span class="tag tag-green">${esc(project.allowed_commands.join(", "))}</span>`;
+  }
+  return `<span class="tag tag-orange">All commands allowed</span>`;
+}
+
 async function deleteProject(id) {
   const p = config.projects[id];
-  if (!confirm(`Delete project "${p.label}"?`)) return;
+  const confirmed = await showConfirm("Delete Project", `Delete project "${p.label}"?`);
+  if (!confirmed) return;
   delete config.projects[id];
   try {
     await persistConfig();
@@ -357,6 +443,30 @@ async function saveProject() {
   } catch (_) {}
 }
 
+// ── Confirm dialog ──────────────────────────────────────────────────────────
+
+let confirmResolve = null;
+
+function showConfirm(title, message) {
+  document.getElementById("confirm-title").textContent = title;
+  document.getElementById("confirm-message").textContent = message;
+  document.getElementById("confirm-modal").classList.remove("hidden");
+
+  return new Promise((resolve) => {
+    confirmResolve = resolve;
+    document.getElementById("btn-confirm-ok").onclick = () => resolveConfirm(true);
+    document.getElementById("btn-confirm-cancel").onclick = () => resolveConfirm(false);
+  });
+}
+
+function resolveConfirm(result) {
+  document.getElementById("confirm-modal").classList.add("hidden");
+  if (confirmResolve) {
+    confirmResolve(result);
+    confirmResolve = null;
+  }
+}
+
 // ── First-run ──────────────────────────────────────────────────────────────
 
 async function checkFirstRun() {
@@ -416,6 +526,15 @@ async function saveSettings() {
   };
   try {
     await persistConfig();
+    // Visual feedback on the save button
+    const btn = document.getElementById("btn-save-settings");
+    const original = btn.textContent;
+    btn.textContent = "Saved";
+    btn.classList.add("saved");
+    setTimeout(() => {
+      btn.textContent = original;
+      btn.classList.remove("saved");
+    }, 2000);
   } catch (_) {}
 }
 

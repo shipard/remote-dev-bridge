@@ -13,10 +13,10 @@
   <nav class="sidebar">
     <div class="sidebar-title">Remote Dev Bridge</div>
     <div class="nav-item active" data-section="servers">
-      <span class="nav-icon">🖥️</span> Servers
+      <span class="nav-icon">🖥️</span> Servers <span class="nav-count" id="nav-count-servers"></span>
     </div>
     <div class="nav-item" data-section="projects">
-      <span class="nav-icon">📁</span> Projects
+      <span class="nav-icon">📁</span> Projects <span class="nav-count" id="nav-count-projects"></span>
     </div>
     <div class="nav-item" data-section="settings">
       <span class="nav-icon">⚙️</span> Settings
@@ -203,6 +203,22 @@
     <div class="modal-footer">
       <button class="btn-secondary" id="btn-close-project-modal-cancel">Cancel</button>
       <button class="btn-primary" id="btn-save-project">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Confirm modal ── -->
+<div id="confirm-modal" class="modal-backdrop hidden">
+  <div class="modal" style="width:380px">
+    <div class="modal-header">
+      <h3 id="confirm-title">Confirm</h3>
+    </div>
+    <div class="modal-body">
+      <p id="confirm-message"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" id="btn-confirm-cancel">Cancel</button>
+      <button class="btn-danger" id="btn-confirm-ok">Delete</button>
     </div>
   </div>
 </div>
