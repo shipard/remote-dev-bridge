@@ -4,6 +4,7 @@ use tracing::debug;
 
 use crate::config::{ServerConfig, Settings};
 use crate::error::SshError;
+use crate::mcp::tools::shq;
 
 use super::session::SshSession;
 
@@ -89,7 +90,7 @@ pub async fn sftp_write_file(
         let parent_str = parent.to_string_lossy();
         if !parent_str.is_empty() && parent_str != "." {
             let (_, stderr, code) = session
-                .exec(&format!("mkdir -p '{parent_str}'"))
+                .exec(&format!("mkdir -p {}", shq(&parent_str)))
                 .await?;
             if code != 0 {
                 return Err(SshError::CommandFailed { code, stderr });
@@ -149,7 +150,7 @@ pub async fn sftp_list_dir(
 ///
 /// Uses an SSH exec channel because SFTP `create_dir` is not recursive.
 pub async fn sftp_mkdir(session: &SshSession, path: &str) -> Result<(), SshError> {
-    let (_, stderr, code) = session.exec(&format!("mkdir -p '{path}'")).await?;
+    let (_, stderr, code) = session.exec(&format!("mkdir -p {}", shq(path))).await?;
     if code != 0 {
         return Err(SshError::CommandFailed { code, stderr });
     }
@@ -218,7 +219,7 @@ pub async fn sftp_remove(
         // Drop the SFTP session before exec so we don't keep an extra channel open.
         drop(sftp);
         debug!("sftp_remove: rm -rf '{path}'");
-        let (_, stderr, code) = session.exec(&format!("rm -rf -- '{path}'")).await?;
+        let (_, stderr, code) = session.exec(&format!("rm -rf -- {}", shq(path))).await?;
         if code != 0 {
             return Err(SshError::CommandFailed { code, stderr });
         }

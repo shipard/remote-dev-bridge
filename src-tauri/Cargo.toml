@@ -1,6 +1,6 @@
 [package]
 name = "remote-dev-bridge"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 
 [[bin]]
@@ -27,7 +27,8 @@ async-trait = "0.1"
 arboard = "3"
 
 [profile.release]
-panic = "abort"
+# No `panic = "abort"`: a panic inside a tool handler must be catchable and
+# returned as a JSON-RPC error instead of killing the bridge.
 codegen-units = 1
 lto = true
 opt-level = "s"

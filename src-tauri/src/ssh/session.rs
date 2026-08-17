@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use russh::client::{self, AuthResult};
 use russh::keys::{load_secret_key, PrivateKeyWithHashAlg};
@@ -201,8 +201,17 @@ impl SshSession {
 
 // ── SshSessionManager ────────────────────────────────────────────────────────
 
+/// How long a session may sit unused before we bother probing it.
+const IDLE_PROBE_AFTER: Duration = Duration::from_secs(60);
+/// How long the probe itself may take before we declare the session dead.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+/// Upper bound on a courtesy disconnect of a session we already believe is dead.
+const DISCONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+
 pub struct SshSessionManager {
     sessions: HashMap<String, Arc<SshSession>>,
+    /// Last time each session was handed out, used to decide when to probe.
+    last_used: HashMap<String, Instant>,
     pub settings: Settings,
 }
 
@@ -213,6 +222,7 @@ impl SshSessionManager {
     pub fn new(settings: Settings) -> Self {
         Self {
             sessions: HashMap::new(),
+            last_used: HashMap::new(),
             settings,
         }
     }
@@ -253,6 +263,7 @@ impl SshSessionManager {
 
     /// Disconnect a specific server and remove its session.
     pub async fn disconnect(&mut self, server_id: &str) -> Result<(), SshError> {
+        self.last_used.remove(server_id);
         if let Some(session) = self.sessions.remove(server_id) {
             session.disconnect().await;
         }
@@ -261,6 +272,7 @@ impl SshSessionManager {
 
     /// Disconnect all active sessions.
     pub async fn disconnect_all(&mut self) {
+        self.last_used.clear();
         let ids: Vec<_> = self.sessions.keys().cloned().collect();
         for id in ids {
             if let Some(s) = self.sessions.remove(&id) {
@@ -269,22 +281,56 @@ impl SshSessionManager {
         }
     }
 
-    /// Like `connect`, but also reconnects if the existing session is dead.
+    /// Like `connect`, but also verifies that the session is genuinely alive.
+    ///
+    /// `is_closed()` does not catch a half-open socket after the laptop sleeps
+    /// or the network changes (Wi-Fi <-> LTE): russh keeps reporting the handle
+    /// as alive while every subsequent call fails on `open channel`. So after an
+    /// idle period we send a cheap `true` and rebuild the session if it does not
+    /// come back.
     pub async fn ensure_connected(
         &mut self,
         server_id: &str,
         config: &ServerConfig,
     ) -> Result<(), SshError> {
-        let needs_connect = self
-            .sessions
-            .get(server_id)
-            .map(|s| s.is_closed())
-            .unwrap_or(true);
+        let stale = match self.sessions.get(server_id) {
+            None => true,
+            Some(s) if s.is_closed() => true,
+            Some(s) => {
+                let idle = self
+                    .last_used
+                    .get(server_id)
+                    .map(|t| t.elapsed())
+                    .unwrap_or(IDLE_PROBE_AFTER);
 
-        if needs_connect {
-            info!(server_id, "reconnecting dead session");
+                if idle < IDLE_PROBE_AFTER {
+                    false
+                } else {
+                    match tokio::time::timeout(PROBE_TIMEOUT, s.exec("true")).await {
+                        Ok(Ok(_)) => false,
+                        Ok(Err(e)) => {
+                            info!(server_id, "liveness probe failed ({e}) - reconnecting");
+                            true
+                        }
+                        Err(_) => {
+                            info!(server_id, "liveness probe timed out - reconnecting");
+                            true
+                        }
+                    }
+                }
+            }
+        };
+
+        if stale {
+            if let Some(old) = self.sessions.remove(server_id) {
+                // A half-open socket can block on disconnect - hence the timeout.
+                let _ = tokio::time::timeout(DISCONNECT_TIMEOUT, old.disconnect()).await;
+            }
+            info!(server_id, "establishing fresh SSH session");
             self.connect(server_id, config).await?;
         }
+
+        self.last_used.insert(server_id.to_owned(), Instant::now());
         Ok(())
     }
 }

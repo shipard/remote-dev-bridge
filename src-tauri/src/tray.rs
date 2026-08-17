@@ -101,27 +101,42 @@ fn copy_claude_config<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// Show the configuration window, creating it if it was closed, or focusing
-/// it if already open.
-fn show_config_window<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-    }
-    // If the window doesn't exist (e.g. was explicitly closed and we didn't
-    // prevent it), `get_webview_window` returns None. The window starts
-    // hidden via tauri.conf.json so this branch is only hit on edge cases.
+/// Show the configuration window and put the icon back in the Dock.
+///
+/// Called from the tray menu, from `setup()` on launch, and from the macOS
+/// `Reopen` event when the user clicks the Dock icon of a running instance.
+pub fn show_config_window<R: Runtime>(app: &AppHandle<R>) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        // Dock first, then the window - otherwise macOS will not activate it.
+        crate::platform::set_dock_icon_visible(true);
+        if let Some(window) = handle.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+        // If the window doesn't exist (e.g. was explicitly closed and we didn't
+        // prevent it), `get_webview_window` returns None. The window starts
+        // hidden via tauri.conf.json so this branch is only hit on edge cases.
+    });
 }
 
 /// Wire the config window to hide (not close) when the user clicks its close
 /// button, keeping it available for the next tray-menu invocation.
+///
+/// Closing also drops the Dock icon: the app stays alive in the menu bar and
+/// the MCP bridge keeps serving Claude Desktop.
 pub fn attach_close_handler(window: &WebviewWindow) {
     let win = window.clone();
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
+            // Hide the window before transforming, or a ghost stays in the Dock.
             let _ = win.hide();
+            let app = win.app_handle().clone();
+            let _ = app.run_on_main_thread(|| {
+                crate::platform::set_dock_icon_visible(false);
+            });
         }
     });
 }

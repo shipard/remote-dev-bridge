@@ -1,4 +1,5 @@
 use std::io::{self, BufRead, Write};
+use std::time::Duration;
 
 use serde_json::{json, Value};
 use tracing::{debug, error, warn};
@@ -11,6 +12,14 @@ use super::types::{
     InitializeResult, JsonRpcError, JsonRpcRequest, JsonRpcResponse, ServerCapabilities,
     ServerInfo, ToolResult,
 };
+
+/// Outer deadline for a single `tools/call`.
+///
+/// SFTP operations have no timeout of their own, so without this a stalled
+/// channel wedges the whole stdio loop and every later call times out on the
+/// Claude Desktop side. `run_command` keeps its own, shorter, caller-supplied
+/// timeout.
+const TOOL_CALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 // ── McpServer ─────────────────────────────────────────────────────────────────
 
@@ -154,8 +163,37 @@ impl McpServer {
             Err(e) => return encode(JsonRpcError::internal(id, e)),
         };
 
-        let tool_result: ToolResult =
-            dispatch(tool_name, &args, &config, &self.sessions).await;
+        // The tool call runs in its own task and under a deadline, so that
+        // neither a panic in a handler nor a stalled SSH channel can take the
+        // bridge down. Requires panic = "unwind" (see Cargo.toml).
+        let sessions = self.sessions.clone();
+        let name = tool_name.to_owned();
+        let mut join = tokio::spawn(async move { dispatch(&name, &args, &config, &sessions).await });
+
+        // Poll the handle by reference: on timeout we still own it and can abort.
+        // Dropping a JoinHandle only detaches the task, and a detached task keeps
+        // holding the SshSessionManager lock, stalling every later call.
+        let tool_result: ToolResult = match tokio::time::timeout(TOOL_CALL_TIMEOUT, &mut join).await
+        {
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) if e.is_panic() => {
+                error!("tool handler panicked: {e}");
+                ToolResult::error(
+                    "Internal error: the tool handler panicked. The bridge is still \
+                     alive - retry, and please report this.",
+                )
+            }
+            Ok(Err(e)) => ToolResult::error(format!("Internal error: task failed ({e})")),
+            Err(_) => {
+                join.abort();
+                error!(tool = tool_name, "tool call exceeded the bridge deadline");
+                ToolResult::error(format!(
+                    "Tool '{tool_name}' exceeded the {}s bridge deadline and was abandoned. \
+                     The SSH session will be re-established on the next call.",
+                    TOOL_CALL_TIMEOUT.as_secs()
+                ))
+            }
+        };
 
         encode(JsonRpcResponse::ok(id, serde_json::to_value(tool_result).unwrap_or(Value::Null)))
     }

@@ -12,6 +12,12 @@ use crate::ssh::{
 
 use super::types::{ToolDefinition, ToolResult};
 
+/// Hard cap on the size of any single tool response body.
+const MAX_OUTPUT_BYTES: usize = 100 * 1024; // 100 KB
+
+/// Number of characters echoed back in "search string not found" diagnostics.
+const SEARCH_PREVIEW_CHARS: usize = 120;
+
 // ── Tool registry ─────────────────────────────────────────────────────────────
 
 pub fn all_tools() -> Vec<ToolDefinition> {
@@ -339,15 +345,16 @@ async fn handle_list_directory(
     if recursive {
         // Use `find` over exec for recursive listing.
         let cmd = format!(
-            "find '{}' -maxdepth {} -not -path '*/.*' | sort",
-            abs_path, max_depth
+            "find {} -maxdepth {} -not -path '*/.*' | sort",
+            shq(&abs_path),
+            max_depth
         );
         match session.exec(&cmd).await {
-            Ok((stdout, stderr, 0)) => {
+            Ok((stdout, _, 0)) => {
                 let output = if stdout.trim().is_empty() {
                     "(empty directory)".to_owned()
                 } else {
-                    stdout
+                    truncate_output(stdout, MAX_OUTPUT_BYTES)
                 };
                 ToolResult::text(output)
             }
@@ -509,12 +516,6 @@ async fn handle_search_files(
     };
     let sub_path = args.get("path").and_then(Value::as_str).unwrap_or("");
 
-    // Validate pattern — it goes inside single quotes in a shell command, so
-    // reject anything that could escape them.
-    if pattern.contains('\'') || pattern.contains('\\') {
-        return ToolResult::error("Pattern must not contain single quotes or backslashes");
-    }
-
     let (session, search_root) = match resolve(project_id, sub_path, config, sessions).await {
         Ok(t) => t,
         Err(e) => return ToolResult::error(e),
@@ -527,9 +528,12 @@ async fn handle_search_files(
         .map(|p| p.root_path.trim_end_matches('/').to_owned())
         .unwrap_or_default();
 
+    // Both the root and the pattern are shell-quoted, so no character in them
+    // can escape into the command.
     let cmd = format!(
-        "find '{}' -maxdepth 5 -name '{}' | sort | head -101",
-        search_root, pattern
+        "find {} -maxdepth 5 -name {} | sort | head -101",
+        shq(&search_root),
+        shq(pattern)
     );
 
     match session.exec(&cmd).await {
@@ -739,8 +743,8 @@ async fn handle_patch_file(
         if !content.contains(search) {
             return ToolResult::error(format!(
                 "Edit #{i}: search string not found in file — aborting to prevent partial edits.\n\
-                 Search string (first 120 chars): {:?}",
-                &search[..search.len().min(120)]
+                 Search string (first {SEARCH_PREVIEW_CHARS} chars): {:?}",
+                preview(search, SEARCH_PREVIEW_CHARS)
             ));
         }
         content = content.replacen(search, replace, 1);
@@ -760,8 +764,6 @@ async fn handle_patch_file(
 }
 
 // ── run_command ───────────────────────────────────────────────────────────────
-
-const MAX_OUTPUT_BYTES: usize = 100 * 1024; // 100 KB
 
 async fn handle_run_command(
     args: &Value,
@@ -798,7 +800,14 @@ async fn handle_run_command(
     // If an allowlist is configured, verify the command starts with a permitted prefix.
     if let Some(allowed) = &project.allowed_commands {
         if !allowed.is_empty() {
-            let permitted = allowed.iter().any(|prefix| command.starts_with(prefix.as_str()));
+            // Require a word boundary after the prefix, otherwise an allowed
+            // `git` would also permit `gitfoo; rm -rf ~`.
+            let permitted = allowed.iter().any(|prefix| {
+                command == prefix.as_str()
+                    || command
+                        .strip_prefix(prefix.as_str())
+                        .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+            });
             if !permitted {
                 return ToolResult::error(format!(
                     "Command not in allowed list for '{project_id}'. \
@@ -830,7 +839,7 @@ async fn handle_run_command(
 
     // Wrap in `cd <root> && <command>` to set working directory.
     let root = project.root_path.trim_end_matches('/');
-    let full_cmd = format!("cd '{}' && {}", root, command);
+    let full_cmd = format!("cd {} && {}", shq(root), command);
 
     let exec_fut = session.exec(&full_cmd);
     let result = tokio::time::timeout(Duration::from_secs(timeout_sec), exec_fut).await;
@@ -955,14 +964,130 @@ fn required_str<'a>(args: &'a Value, field: &'static str) -> Result<&'a str, Str
         .ok_or_else(|| format!("Missing required field: '{field}'"))
 }
 
+/// Take at most `max_chars` *characters* (never bytes) from `s`.
+///
+/// Byte slicing (`&s[..120]`) panics when the cut lands inside a multi-byte
+/// UTF-8 character - Czech diacritics, typographic quotes, em dashes, emoji.
+/// This never panics.
+fn preview(s: &str, max_chars: usize) -> String {
+    let mut out = String::new();
+    for (n, ch) in s.chars().enumerate() {
+        if n == max_chars {
+            out.push('\u{2026}');
+            break;
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// Largest index `<= max_bytes` that is a valid UTF-8 character boundary.
+///
+/// Local implementation instead of `str::floor_char_boundary` so the crate does
+/// not depend on the toolchain version.
+fn floor_char_boundary(s: &str, max_bytes: usize) -> usize {
+    if max_bytes >= s.len() {
+        return s.len();
+    }
+    let mut i = max_bytes;
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
 /// Truncate output to at most `max_bytes`, appending a notice if clipped.
 fn truncate_output(mut s: String, max_bytes: usize) -> String {
     if s.len() <= max_bytes {
         return s;
     }
-    // Truncate at a char boundary.
-    let cut = s.floor_char_boundary(max_bytes);
+    let cut = floor_char_boundary(&s, max_bytes);
     s.truncate(cut);
     s.push_str("\n[... output truncated ...]");
     s
+}
+
+/// POSIX-quote a string for safe interpolation into a shell command.
+///
+/// `it's` becomes `'it'\''s'`. Paths and patterns reach us from the model and
+/// may contain anything, so every shell interpolation site must use this.
+pub fn shq(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression guard: the exact shape that used to panic.
+    /// 119 ASCII bytes, then a 3-byte typographic quote straddling byte 120.
+    #[test]
+    fn preview_does_not_panic_on_multibyte_at_the_cut() {
+        let s = format!("{}„český text“ pokračuje dál", "a".repeat(119));
+        let p = preview(&s, SEARCH_PREVIEW_CHARS);
+        assert!(p.chars().count() <= SEARCH_PREVIEW_CHARS + 1);
+        assert!(p.ends_with('…'));
+    }
+
+    #[test]
+    fn preview_short_input_is_unchanged() {
+        assert_eq!(preview("žluťoučký kůň", 120), "žluťoučký kůň");
+    }
+
+    #[test]
+    fn preview_at_exact_boundary_has_no_ellipsis() {
+        assert_eq!(preview("ábc", 3), "ábc");
+    }
+
+    #[test]
+    fn floor_char_boundary_never_splits_a_char() {
+        let s = "ááááá"; // 2 bytes each
+        for n in 0..=s.len() + 2 {
+            let i = floor_char_boundary(s, n);
+            assert!(s.is_char_boundary(i), "index {i} is not a char boundary");
+        }
+    }
+
+    #[test]
+    fn truncate_output_is_utf8_safe() {
+        let s = "ě".repeat(100); // 200 bytes
+        let out = truncate_output(s, 51); // 51 is mid-character
+        assert!(out.starts_with(&"ě".repeat(25)));
+        assert!(out.ends_with("[... output truncated ...]"));
+    }
+
+    #[test]
+    fn shq_escapes_single_quotes() {
+        assert_eq!(shq("Patrik's notes.md"), r"'Patrik'\''s notes.md'");
+        assert_eq!(shq("plain"), "'plain'");
+        assert_eq!(shq("a'; rm -rf ~; echo '"), r"'a'\''; rm -rf ~; echo '\'''");
+    }
+
+    #[test]
+    fn allowlist_requires_a_word_boundary() {
+        let allowed = ["git".to_string()];
+        let check = |command: &str| {
+            allowed.iter().any(|prefix| {
+                command == prefix.as_str()
+                    || command
+                        .strip_prefix(prefix.as_str())
+                        .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+            })
+        };
+        assert!(check("git status"));
+        assert!(check("git"));
+        assert!(!check("gitfoo; rm -rf ~"));
+    }
+
+    #[test]
+    fn resolve_safe_path_blocks_traversal() {
+        assert!(resolve_safe_path("/home/u/proj", "../../etc/passwd").is_err());
+        assert!(resolve_safe_path("/home/u/proj", "/etc/passwd").is_err());
+        assert_eq!(
+            resolve_safe_path("/home/u/proj", "src/main.rs").unwrap(),
+            "/home/u/proj/src/main.rs"
+        );
+    }
 }

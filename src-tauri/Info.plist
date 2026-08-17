@@ -2,7 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>LSUIElement</key>
-    <true/>
+    <!-- Deliberately NO LSUIElement. Dock visibility is toggled at runtime via
+         TransformProcessType (see src/platform.rs): the icon is in the Dock
+         while the configuration window is open and disappears when it is
+         closed, leaving only the menu bar item. A static LSUIElement=true
+         makes clicking the Dock icon a no-op.
+         See docs/utf8-panic-and-stall-hardening.md. -->
 </dict>
 </plist>

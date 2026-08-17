@@ -5,6 +5,7 @@ mod commands;
 mod config;
 mod error;
 mod mcp;
+mod platform;
 mod ssh;
 mod tray;
 
@@ -129,6 +130,13 @@ fn cleanup_old_logs(log_dir: &std::path::Path, keep: usize) {
 async fn run_mcp_stdio() {
     info!("Starting in MCP stdio mode");
 
+    // Panics inside tool handlers are caught in protocol.rs and returned as
+    // errors; this hook makes sure they are still visible in Claude Desktop's
+    // stderr log instead of vanishing silently.
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("PANIC in remote-dev-bridge: {info}");
+    }));
+
     let config_path = match config::config_path() {
         Ok(p) => p,
         Err(e) => {
@@ -162,28 +170,11 @@ async fn run_mcp_stdio() {
 
 // ── Desktop app mode ───────────────────────────────────────────────────────────
 
-/// Make this process a macOS "UI-element" app: no Dock icon, no app menu.
-/// `LSUIElement` in Info.plist does this for .app bundles, but when running
-/// the bare binary we must call the OS API ourselves — before any Cocoa /
-/// Tauri initialisation so the Dock icon never appears in the first place.
-#[cfg(target_os = "macos")]
-fn macos_hide_from_dock() {
-    #[link(name = "ApplicationServices", kind = "framework")]
-    extern "C" {
-        fn TransformProcessType(psn: *const [u32; 2], r#type: u32) -> i32;
-    }
-    const K_CURRENT_PROCESS: [u32; 2] = [0, 2]; // kCurrentProcess
-    const K_TRANSFORM_TO_UI_ELEMENT: u32 = 4; // kProcessTransformToUIElementApplication
-    unsafe {
-        TransformProcessType(&K_CURRENT_PROCESS, K_TRANSFORM_TO_UI_ELEMENT);
-    }
-}
-
 fn run_desktop_app() {
     info!("Starting in desktop app mode");
 
-    #[cfg(target_os = "macos")]
-    macos_hide_from_dock();
+    // Dock visibility is no longer decided once at startup: it follows the
+    // config window (see platform::set_dock_icon_visible and tray.rs).
 
     // Detect first run *before* load_config creates the file.
     let first_run = !config::config_exists();
@@ -222,14 +213,27 @@ fn run_desktop_app() {
             tray::setup(app.handle())?;
             if let Some(window) = app.get_webview_window("main") {
                 tray::attach_close_handler(&window);
-                if first_run {
-                    // Auto-open the config window on first launch.
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
             }
+            // If the user launched the app (Dock / Finder / Spotlight) they want
+            // the configuration, not an invisible process. `first_run` no longer
+            // gates this; it is still exposed to the frontend via IsFirstRun.
+            tray::show_config_window(app.handle());
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error running Tauri app");
+        .build(tauri::generate_context!())
+        .expect("error building Tauri app")
+        .run(|app, event| match event {
+            // macOS: the user clicked the Dock icon of an already-running
+            // instance. Without this the click is a no-op.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => tray::show_config_window(app),
+
+            // Never quit just because the last window went away - the tray icon
+            // and the MCP bridge must stay alive. Tray "Quit" goes through
+            // app.exit(0), where code = Some(0) and the exit proceeds.
+            tauri::RunEvent::ExitRequested { api, code, .. } if code.is_none() => {
+                api.prevent_exit();
+            }
+            _ => {}
+        });
 }
