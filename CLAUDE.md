@@ -1,35 +1,11 @@
 # CLAUDE.md — remote-dev-bridge
 
-Working notes for Claude Code on the devserver checkout.
+Working notes for Claude Code.
 
-## Current task
-
-`docs/utf8-panic-and-stall-hardening.md` — read it first.
-
-Work on the current fix branch; never commit to `stable`.
-
-**This repository is public.** Internal tracker ids mean nothing to anyone
-outside the team, so keep them out of anything that ships: code comments, doc
-prose, commit messages, tag and release notes. Describe the bug instead of
-citing the ticket. Internal project names, hostnames and absolute paths from our
-own machines stay out too. Branch history is squash-merged onto `stable`, so
-branch commit messages never reach the public remote — but the tree does.
-
-State as of 2026-08-17: the UTF-8, quoting, deadline and Dock work is
-implemented, and v0.1.3 is built, installed and verified on the Mac — clippy
-clean, 8/8 unit tests green, Dock behaviour confirmed with no double icon.
-Outstanding: the idle probe after a real sleep or network change, and atomic
-remote writes (see the follow-ups in the brief).
-
-## Environment constraints
-
-- This checkout lives on the **devserver**: `~/sw/remote-dev-bridge`.
-- **No Rust toolchain here.** `cargo` is not installed. You cannot build, test,
-  clippy or run anything. Edit files only.
-- All verification happens on the **Mac** (Xcode CLT + Rust + `cargo tauri`):
-  `git pull && cargo clippy --all-targets && cargo test && cargo tauri build`.
-- Because nothing is compile-checked here, prefer small, obviously-correct edits
-  over refactors. If a change needs a design decision, stop and ask.
+**This repository is public.** Keep internal tracker ids out of anything that
+ships: code comments, doc prose, commit messages, tag and release notes.
+Describe the bug instead of citing the ticket. Internal project names,
+hostnames and absolute paths from private machines stay out too.
 
 ## Repository layout
 
@@ -73,15 +49,9 @@ rebuild plus a Claude Desktop restart.
 6. **stdout belongs to the JSON-RPC transport** in `--mcp-stdio` mode. Logs go
    to stderr. Never `println!` in that path.
 7. Prose, comments and commit messages in English, and free of internal tracker
-   ids — see the note under "Current task".
+   ids — see the public-repository note at the top.
 
-## Editing this repo through the bridge itself
+## Verification
 
-As of the installed v0.1.3 this is no longer a hazard: `patch_file` on Czech
-content is safe, and the edits in this repo were themselves applied through the
-bridge using it. The old rules — keep Czech lines under ~110 bytes, rewrite whole
-files with `write_file`, pre-scan content for unsafe byte lengths — are obsolete.
-
-The one remaining caveat is F10: a connection drop mid-write can truncate a file,
-because remote writes are not atomic yet. After any transport error or timeout,
-read the file back before trusting it.
+`cargo clippy --all-targets && cargo test && cargo tauri build` must pass
+before anything lands on `stable`.
